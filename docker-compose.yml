@@ -1,0 +1,29 @@
+services:
+  app:
+    build: .
+    container_name: multi_agents_app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/multi_agents
+      OPENAI_API_KEY: OPENAI_API_KEY_REMOVEDgIFyqIiZk3hf1xImGtf2TrT2ciBYkVyaGxQOnq8gers7eSDz-qQt9vogPq5cPCDgQn6gdrCqiBT3BlbkFJg3_XDxDn5cFzXWkIeCQn41_Tj0VrifBRmhYSc0h-hX-aBrmLBusd0Wcxeq0WGIyDzhhSmRW_gA
+      PYTHONPATH: /app
+    restart: always
+
+  db:
+    image: postgres:15
+    container_name: multi_agents_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: multi_agents
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+volumes:
+  postgres_data:
