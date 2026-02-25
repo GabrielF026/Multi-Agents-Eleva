@@ -7,7 +7,6 @@ fastapi==0.132.0
 greenlet==3.3.2
 h11==0.16.0
 idna==3.11
-psycopg2-binary==2.9.11
 pydantic==2.12.5
 pydantic_core==2.41.5
 python-dotenv==1.2.1
@@ -17,3 +16,5 @@ typing-inspection==0.4.2
 typing_extensions==4.15.0
 uvicorn==0.41.0
 openai>=1.30.0
+asyncpg>=0.29.0
+alembic>=1.13.0

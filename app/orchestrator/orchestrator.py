@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 from app.infrastructure.openai_provider import OpenAIProvider
 from app.agents.goalclassifier import GoalClassifierAgent
@@ -10,40 +10,46 @@ from app.strategy.strategy_engine import StrategyEngine
 class Orchestrator:
 
     def __init__(self):
-        # Provider principal de LLM
         self.llm_provider = OpenAIProvider()
-
-        # Agentes do MVP
         self.goalclassifier = GoalClassifierAgent(self.llm_provider)
         self.lead_score_agent = LeadScoreAgent(self.llm_provider)
         self.sdr_agent = SDRAgent(self.llm_provider)
 
-    async def handle(self, message: str) -> Dict[str, Any]:
+    async def handle(
+        self,
+        message: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        current_goal: Optional[str] = None,
+        is_repeated: bool = False
+    ) -> Dict[str, Any]:
 
-        # 1️⃣ Classificar objetivo do cliente
         classification = await self.goalclassifier.classify({
             "message": message
         })
 
-        goal = classification.get("goal", "OUTRO")
+        new_goal = classification.get("goal", "OUTRO")
 
-        # 2️⃣ Classificar temperatura do lead (antes do SDR)
+        if current_goal and new_goal == "OUTRO":
+            goal = current_goal
+        else:
+            goal = new_goal
+
         lead_score_result = await self.lead_score_agent.score(
             message=message,
-            sdr_response="",   # ainda não temos resposta do SDR
+            sdr_response="",
             goal=goal
         )
 
         lead_score_value = lead_score_result.get("lead_score", "WARM")
 
-        # 3️⃣ SDR gera abordagem estratégica já sabendo a temperatura
         sdr_result = await self.sdr_agent.handle(
             message=message,
             goal=goal,
-            lead_score=lead_score_value
+            lead_score=lead_score_value,
+            history=history or [],
+            is_repeated=is_repeated
         )
 
-        # 4️⃣ Aplicar estratégia final (handoff, prioridade, follow-up)
         final_result = StrategyEngine.apply(
             lead_score=lead_score_value,
             goal=goal,

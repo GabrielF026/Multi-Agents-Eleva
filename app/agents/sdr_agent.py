@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, List
 from app.core.base_agent import BaseAgent
 from app.core.llm_provider import LLMProviderInterface
 from app.core.product_catalog import ProductCatalog
@@ -10,65 +10,64 @@ class SDRAgent(BaseAgent):
         super().__init__(name="SDRAgent")
         self.llm_provider = llm_provider
 
-    # ✅ obrigatório por causa do BaseAgent
     async def classify(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         return {"message": "SDRAgent does not classify"}
 
-    # ✅ obrigatório por causa do BaseAgent
     async def respond(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         return {"message": "Use handle() instead"}
 
-    # 🔵 método real usado no fluxo
-    async def handle(self, message: str, goal: str, lead_score: str | None = None):
+    async def handle(
+        self,
+        message: str,
+        goal: str,
+        lead_score: str | None = None,
+        history: List[Dict[str, str]] | None = None,
+        is_repeated: bool = False
+    ):
 
         product = ProductCatalog.get_product_by_goal(goal)
 
+        if is_repeated:
+            repetition_instruction = """
+O cliente repetiu exatamente a mesma mensagem.
+
+Explique novamente, mas:
+- Não repita a mesma estrutura.
+- Seja mais claro.
+- Use palavras diferentes.
+- Se possível, avance um passo na condução.
+"""
+        else:
+            repetition_instruction = ""
+
+        history_text = ""
+        if history:
+            for msg in history[-5:]:
+                history_text += f'{msg["role"]}: {msg["content"]}\n'
+
         prompt = f"""
-Você é um SDR consultivo da ElevaCredi especializado em qualificação estratégica de leads.
+Você é um SDR consultivo da ElevaCredi.
+
+HISTÓRICO RECENTE:
+{history_text}
 
 CONTEXTO:
 Objetivo identificado: {goal}
 Temperatura do lead: {lead_score}
-Mensagem do cliente: "{message}"
+Mensagem atual: "{message}"
 
 Produto recomendado:
 Nome: {product["name"]}
 Preço: {product["price"]}
-Descrição resumida: {product["description"]}
+Descrição: {product["description"]}
 
-REGRAS ABSOLUTAS:
-- Não invente objeções que o cliente não mencionou.
-- Não assuma problemas que não foram ditos.
-- Não escreva textos longos demais.
-- Use linguagem natural, como conversa de WhatsApp.
-- Seja claro e direto.
-- Demonstre entendimento real da dor.
-- Não pareça robô.
-- Sempre conduza para o próximo passo humano.
+{repetition_instruction}
 
-COMPORTAMENTO POR TEMPERATURA:
-
-Se HOT:
-- Seja direto.
-- Confirme intenção.
-- Prepare para encaminhamento humano.
-- Use energia segura e objetiva.
-
-Se WARM:
-- Demonstre empatia.
-- Explique brevemente o porquê da solução.
-- Faça 1 pergunta estratégica que ajude o humano depois.
-
-Se COLD:
-- Seja leve.
-- Não pressione.
-- Ofereça ajuda futura.
-- Não tente vender.
-
-ESTRUTURA IDEAL:
-1. Reconhecer dor real.
-2. Conectar com solução.
-3. Conduzir próximo passo.
+REGRAS:
+- Nunca mude o produto se o objetivo continuar o mesmo.
+- Não repita exatamente a resposta anterior.
+- Seja natural.
+- Conduza para próximo passo humano quando fizer sentido.
 
 Responda agora.
 """
