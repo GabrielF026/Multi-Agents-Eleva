@@ -24,7 +24,8 @@ class Orchestrator:
     ) -> Dict[str, Any]:
 
         classification = await self.goalclassifier.classify({
-            "message": message
+            "message": message,
+            "history": history or []
         })
 
         new_goal = classification.get("goal", "OUTRO")

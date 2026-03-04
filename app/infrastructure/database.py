@@ -1,16 +1,13 @@
 import os
+from typing import AsyncGenerator
+
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     async_sessionmaker,
     AsyncSession,
 )
-from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
-from typing import AsyncGenerator
 
-from app.models.base import Base
 from dotenv import load_dotenv
-import os
 
 load_dotenv()
 
@@ -43,16 +40,12 @@ AsyncSessionLocal = async_sessionmaker(
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
         yield session
-# ==========================
-# Inicialização do Banco (apenas para DEV)
-# ==========================
 
-import app.models.lead
-import app.models.conversation
-import app.models.message
-import app.models.classification
-import app.models.action
 
+# ==========================
+# Inicialização do Banco
+# ==========================
+# NÃO usamos mais create_all().
+# O schema agora é controlado exclusivamente pelo Alembic.
 async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    pass

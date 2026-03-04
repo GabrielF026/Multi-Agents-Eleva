@@ -3,13 +3,14 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.orchestrator.orchestrator import Orchestrator
-from app.infrastructure.database import init_db, get_db
+from app.infrastructure.database import get_db
 
 from app.services.lead_repository import LeadRepository
 from app.services.conversation_repository import ConversationRepository
 from app.services.message_repository import MessageRepository
 from app.services.classification_repository import ClassificationRepository
 from app.services.action_repository import ActionRepository
+from app.services.lead_interest_repository import LeadInterestRepository
 
 from app.models.enums import (
     MessageSender,
@@ -22,11 +23,6 @@ from app.models.enums import (
 
 app = FastAPI(title="Multi Agents Eleva")
 orchestrator = Orchestrator()
-
-
-@app.on_event("startup")
-async def startup_event():
-    await init_db()
 
 
 class MessageRequest(BaseModel):
@@ -51,6 +47,7 @@ async def chat(
     message_repo = MessageRepository(db)
     classification_repo = ClassificationRepository(db)
     action_repo = ActionRepository(db)
+    interest_repo = LeadInterestRepository(db)
 
     # =========================
     # 1️⃣ Lead
@@ -132,22 +129,52 @@ async def chat(
     strategy_data = result.get("final_response", {}).get("strategy")
 
     # =========================
-    # 🔒 Proteger goal
+    # 7️⃣ Processar Classificação
     # =========================
     if classification_data:
-        new_goal = classification_data["goal"]
 
-        if lead.goal and new_goal == "OUTRO":
-            classification_data["goal"] = lead.goal.name
+        new_goal_str = classification_data["goal"]
+        source_value = classification_data["source"].upper()
 
-        await classification_repo.create(
-            lead_id=lead.id,
-            goal=Goal[classification_data["goal"]],
-            source=ClassificationSource[classification_data["source"].upper()]
-        )
+        # 🚫 Ignorar HISTORY completamente
+        if source_value != "HISTORY":
+
+            new_goal = Goal[new_goal_str]
+
+            # 🔒 Caso já exista goal principal
+            if lead.goal:
+
+                # 🚫 OUTRO não sobrescreve
+                if new_goal == Goal.OUTRO:
+                    new_goal = lead.goal
+
+                # 🔥 Se for diferente do principal → vira interesse secundário
+                elif new_goal != lead.goal:
+
+                    already_exists = await interest_repo.exists(
+                        lead_id=lead.id,
+                        goal=new_goal
+                    )
+
+                    if not already_exists:
+                        await interest_repo.create(
+                            lead_id=lead.id,
+                            goal=new_goal
+                        )
+
+            # 🆕 Se ainda não tem goal principal
+            else:
+                lead.goal = new_goal
+
+            # salvar classificação formal
+            await classification_repo.create(
+                lead_id=lead.id,
+                goal=new_goal,
+                source=ClassificationSource[source_value]
+            )
 
     # =========================
-    # 7️⃣ Salvar resposta SYSTEM
+    # 8️⃣ Salvar resposta SYSTEM
     # =========================
     final_response = result.get("final_response")
 
@@ -159,7 +186,7 @@ async def chat(
         )
 
     # =========================
-    # 8️⃣ Salvar Action
+    # 9️⃣ Salvar Action
     # =========================
     if strategy_data:
         followup = strategy_data.get("followup")
@@ -173,18 +200,13 @@ async def chat(
         )
 
     # =========================
-    # 9️⃣ Atualizar Lead
+    # 🔟 Atualizar Lead
     # =========================
-    if strategy_data and lead_score_data and classification_data:
-
-        effective_goal = (
-            lead.goal if lead.goal
-            else Goal[classification_data["goal"]]
-        )
+    if strategy_data and lead_score_data:
 
         lead.apply_strategy(
             lead_score=LeadScore[lead_score_data["lead_score"]],
-            goal=effective_goal,
+            goal=lead.goal,
             priority=Priority[strategy_data["priority"]],
             next_action=strategy_data["next_action"],
         )

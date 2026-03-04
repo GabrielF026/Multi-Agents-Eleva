@@ -46,3 +46,4 @@ class MessageSender(enum.Enum):
 class ClassificationSource(enum.Enum):
     RULE = "RULE"
     LLM = "LLM"
+    HISTORY = "HISTORY"

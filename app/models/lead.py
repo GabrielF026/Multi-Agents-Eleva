@@ -94,6 +94,15 @@ class Lead(Base):
     )
 
     # ========================
+    # Interesses (novo)
+    # ========================
+    interests = relationship(
+        "LeadInterest",
+        back_populates="lead",
+        cascade="all, delete-orphan"
+    )
+
+    # ========================
     # State Machine
     # ========================
     ALLOWED_TRANSITIONS = {
