@@ -1,269 +1,541 @@
-# Multi-Agents-Eleva
-Repositorio criado para o sistama de multiagentes desenvolvidos para a eleva credi
+# 🤖 Multi-Agents Eleva
 
+Sistema de qualificação de leads baseado em pipeline de agentes de IA.
+Desenvolvido para a **Eleva**, focada em soluções de crédito e recuperação financeira.
 
-Multi-Agents Eleva
-Arquitetura de IA para Qualificação e Priorização de Leads
-🎯 Objetivo do Sistema
+---
 
-O Multi-Agents Eleva é um sistema de IA projetado para:
+## Índice
 
-Classificar intenção de leads
+- [Visão Geral](#visão-geral)
+- [Arquitetura](#arquitetura)
+- [Pipeline de Agentes](#pipeline-de-agentes)
+- [Estrutura de Pastas](#estrutura-de-pastas)
+- [Tecnologias](#tecnologias)
+- [Como Rodar Localmente](#como-rodar-localmente)
+- [Variáveis de Ambiente](#variáveis-de-ambiente)
+- [Endpoints da API](#endpoints-da-api)
+- [Exemplos de Requisição](#exemplos-de-requisição)
+- [Fluxo de Dados](#fluxo-de-dados)
+- [Catálogo de Produtos](#catálogo-de-produtos)
+- [Guia de Contribuição — Fase 2](#guia-de-contribuição--fase-2)
+- [Roadmap](#roadmap)
 
-Recomendar o produto adequado
+---
 
-Avaliar temperatura do lead (HOT, WARM, COLD)
+## Visão Geral
 
-Definir prioridade operacional
+Este projeto implementa um sistema de qualificação de leads usando um **pipeline de agentes de IA**.  
+A partir de uma mensagem enviada pelo cliente, o sistema:
 
-Encaminhar para atendimento humano estratégico
+- Classifica o **objetivo** do cliente (ex.: FINANCIAMENTO, LIMPAR_NOME, etc.)
+- Classifica a **temperatura do lead** (HOT, WARM, COLD)
+- Gera uma **resposta humanizada** via um SDR virtual
+- Define uma **estratégia operacional** (handoff para humano, nutrição, follow-up)
 
-Preparar base para follow-up automático
+Toda a jornada é rastreada por um `trace_id` único por requisição.
 
-O sistema não fecha vendas no MVP.
-Ele qualifica e direciona.
+---
 
-🧠 Arquitetura Geral
+## Arquitetura
 
-O sistema utiliza arquitetura multi-agentes com orquestração centralizada.
+```text
+┌─────────────────────────────────────────────────────────┐
+│                        FastAPI                          │
+│                       main.py                           │
+│         POST /chat          GET /health                 │
+└───────────────────────┬─────────────────────────────────┘
+                        │ AgentContext
+                        ▼
+┌─────────────────────────────────────────────────────────┐
+│                     Orchestrator                        │
+│   Coordena o pipeline · Logging · Resiliência           │
+└──┬──────────────┬──────────────┬───────────────────────┘
+   │              │              │
+   ▼              ▼              ▼
+┌──────────┐ ┌─────────────┐ ┌──────────┐
+│  Goal    │ │  LeadScore  │ │   SDR    │
+│Classifier│ │   Agent     │ │  Agent   │
+│  Agent   │ │             │ │          │
+└──────────┘ └─────────────┘ └──────────┘
+   │              │              │
+   └──────────────┴──────────────┘
+                  │ AgentContext enriquecido
+                  ▼
+┌─────────────────────────────────────────────────────────┐
+│                   StrategyEngine                        │
+│   HANDOFF_TO_HUMAN · NURTURE · Follow-up config        │
+└─────────────────────────────────────────────────────────┘
+```
 
-Fluxo principal:
+### Princípios
 
-Mensagem do Cliente
-        ↓
-GoalClassifierAgent
-        ↓
-LeadScoreAgent
-        ↓
-SDRAgent
-        ↓
-StrategyEngine
-        ↓
-Resposta estruturada + estratégia operacional
-🧩 Componentes do Sistema
-1️⃣ GoalClassifierAgent
+- **AgentContext imutável**: todos os agentes recebem e retornam um `AgentContext` via `model_copy(update=...)`.
+- **Interface única** entre agentes: `async def run(self, context: AgentContext) -> AgentContext`.
+- **Plug and play**: adicionar um novo agente é só colocá-lo na lista em `main.py`.
+- **Resiliência**: falhas são registradas em `context.errors` e o pipeline continua.
+- **Rastreabilidade**: cada requisição tem um `trace_id` propagado por todos os agentes.
 
-Responsável por identificar o objetivo do lead.
+---
 
-Categorias atuais:
+## Pipeline de Agentes
 
-FINANCIAMENTO
+```text
+Mensagem do cliente
+        │
+        ▼
+┌───────────────────────┐
+│  GoalClassifierAgent  │
+│ - Regras rápidas      │
+│ - Fallback LLM com    │
+│   structured output   │
+│ → context.goal        │
+│ → context.goal_source │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│   LeadScoreAgent      │
+│ - Regras HOT/WARM/COLD│
+│ - Fallback LLM com    │
+│   reasoning + schema  │
+│ → context.lead_score  │
+│ → context.lead_score_ │
+│    source             │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│      SDRAgent         │
+│ - System prompt (persona)  │
+│ - User prompt (tarefa atual)│
+│ - Considera histórico +     │
+│   is_repeated               │
+│ → context.sdr_response      │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│    StrategyEngine     │
+│ - HANDOFF_TO_HUMAN    │
+│ - NURTURE             │
+│ - Follow-up + priority│
+│ → context.strategy    │
+└───────────┬───────────┘
+            │
+            ▼
+Resposta final com trace_id
+```
 
-CREDITO_ALTO
+---
 
-ALUGAR_IMOVEL
+## Estrutura de Pastas
 
-NEGOCIAR_DIVIDAS
+```text
+MULTI-AGENTS-ELEVA/
+│
+├── app/
+│   ├── agents/
+│   │   ├── __init__.py
+│   │   ├── goalclassifier.py      # Classifica objetivo do lead
+│   │   ├── lead_score_agent.py    # Classifica temperatura HOT/WARM/COLD
+│   │   └── sdr_agent.py           # Gera resposta consultiva
+│   │
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── base_agent.py          # BaseAgent: run(context), logging comum
+│   │   ├── context.py             # AgentContext e LeadData (Pydantic)
+│   │   ├── llm_provider.py        # Interface abstrata de LLM
+│   │   └── product_catalog.py     # Catálogo tipado de produtos Eleva
+│   │
+│   ├── infrastructure/
+│   │   ├── __init__.py
+│   │   └── openai_provider.py     # Provedor OpenAI com retry e timeout
+│   │
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── action.py
+│   │   ├── base.py
+│   │   ├── classification.py
+│   │   ├── conversation.py
+│   │   ├── enums.py
+│   │   ├── lead.py
+│   │   ├── lead_interest.py
+│   │   └── message.py
+│   │
+│   ├── orchestrator/
+│   │   └── orchestrator.py        # Coordena o pipeline de agentes
+│   │
+│   ├── strategy/
+│   │   └── strategy_engine.py     # Motor de decisão operacional
+│   │
+│   └── main.py                    # FastAPI: endpoints, DI, middleware
+│
+├── .env.example
+├── requirements.txt
+└── README.md
+```
 
-LIMPAR_NOME
+---
 
-OUTRO
+## Tecnologias
 
-Estratégia:
+| Tecnologia | Uso |
+|-----------|-----|
+| Python 3.11+ | Linguagem principal |
+| FastAPI | API assíncrona |
+| Pydantic v2 | Modelos e validação |
+| OpenAI Python SDK | Chamada ao GPT-4o-mini (ou compatível) |
+| Tenacity | Retry com exponential backoff |
+| Uvicorn | ASGI server |
 
-Regras rápidas (baixo custo)
+---
 
-Fallback via LLM
+## Como Rodar Localmente
 
-Retorno:
+### 1. Clonar o repositório
 
+```bash
+git clone https://github.com/<seu-usuario>/multi-agents-eleva.git
+cd multi-agents-eleva
+```
+
+### 2. Criar e ativar ambiente virtual
+
+```bash
+python -m venv venv
+
+# Linux/macOS
+source venv/bin/activate
+
+# Windows
+venv\Scripts\activate
+```
+
+### 3. Instalar dependências
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Configurar variáveis de ambiente
+
+Crie um `.env` na raiz (ou exporte no seu ambiente):
+
+```env
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini        # opcional (default)
+OPENAI_TIMEOUT=30.0             # opcional (default em segundos)
+```
+
+### 5. Rodar o servidor
+
+```bash
+uvicorn app.main:app --reload
+```
+
+Acesse:
+
+- Swagger/OpenAPI: http://localhost:8000/docs  
+- Health: http://localhost:8000/health
+
+---
+
+## Variáveis de Ambiente
+
+| Variável | Obrigatória | Descrição |
+|----------|------------|-----------|
+| `OPENAI_API_KEY` | ✅ | API key da OpenAI |
+| `OPENAI_MODEL` | ❌ | Modelo usado (default: `gpt-4o-mini`) |
+| `OPENAI_TIMEOUT` | ❌ | Timeout em segundos (default: `30.0`) |
+
+---
+
+## Endpoints da API
+
+### `GET /health`
+
+Health check real — verifica o provider de LLM e os agentes registrados.
+
+**Resposta (exemplo):**
+
+```json
 {
-  "goal": "LIMPAR_NOME",
-  "source": "rule" | "llm"
+  "status": "ok",
+  "llm_available": true,
+  "agents_registered": [
+    "GoalClassifierAgent",
+    "LeadScoreAgent",
+    "SDRAgent"
+  ],
+  "agent_count": 3,
+  "version": "1.0.0"
 }
-2️⃣ LeadScoreAgent
+```
 
-Responsável por classificar temperatura do lead:
+Se o LLM estiver indisponível, retorna status HTTP `503`.
 
-HOT → pronto para ação
+---
 
-WARM → interessado com dúvidas
+### `POST /chat`
 
-COLD → baixa intenção
+Executa o pipeline completo para uma mensagem do cliente.
 
-Estratégia híbrida:
+**Request body:**
 
-Palavras-chave (regra rápida)
-
-Classificação via LLM
-
-Retorno:
-
+```json
 {
-  "lead_score": "WARM",
-  "source": "rule_warm" | "rule_hot" | "llm"
+  "message": "Quero limpar meu nome no Serasa, está sujo há 2 anos.",
+  "history": [],
+  "current_goal": null,
+  "is_repeated": false
 }
-3️⃣ SDRAgent
+```
 
-Responsável por gerar resposta estratégica baseada em:
+Campos:
 
-Objetivo (goal)
+| Campo | Tipo | Obrigatório | Descrição |
+|-------|------|------------|-----------|
+| `message` | string | ✅ | Mensagem atual do cliente (máx. ~2000 chars) |
+| `history` | lista de objetos | ❌ | Histórico no formato `[{ "role": "user"|"assistant", "content": "..." }]` |
+| `current_goal` | string | ❌ | Goal identificado anteriormente (se a conversa já existia) |
+| `is_repeated` | boolean | ❌ | Se o lead já teve contato anterior com a Eleva |
 
-Produto recomendado
+**Response (exemplo simplificado):**
 
-Temperatura do lead (lead_score)
-
-Comportamento adaptativo:
-Lead Score	Estratégia de Comunicação
-HOT	Direto, objetivo, encaminhamento imediato
-WARM	Consultivo, empático, pergunta estratégica
-COLD	Leve, sem pressão
-
-O SDR não fecha vendas no MVP.
-
-4️⃣ StrategyEngine
-
-Camada de decisão operacional.
-
-Define:
-
-next_action
-
-priority
-
-followup
-
-Encaminhamento humano
-
-Regras atuais:
-Lead Score	Next Action	Priority
-HOT	HANDOFF_TO_HUMAN	HIGH
-WARM	HANDOFF_TO_HUMAN	MEDIUM
-COLD	NURTURE	LOW
-
-Exemplo de retorno final:
-
+```json
 {
+  "trace_id": "3f7a1c2e-...",
+  "classification": {
+    "goal": "LIMPAR_NOME",
+    "source": "rule"
+  },
+  "lead_score": {
+    "score": "WARM",
+    "source": "rule_warm"
+  },
+  "sdr_response": "Entendo, ficar com o nome sujo tanto tempo é bem desconfortável...",
   "strategy": {
+    "trace_id": "3f7a1c2e-...",
     "lead_score": "WARM",
+    "goal": "LIMPAR_NOME",
     "next_action": "HANDOFF_TO_HUMAN",
-    "priority": "MEDIUM",
+    "priority": "HIGH",
     "followup": {
       "enabled": true,
-      "delay_days": 2
-    }
-  }
+      "delay_days": 2,
+      "reason": "Lead WARM: interesse real detectado. Follow-up em 2 dias..."
+    },
+    "reasoning": "Lead WARM com objetivo 'LIMPAR_NOME': interesse real..."
+  },
+  "pipeline_errors": [],
+  "has_errors": false
 }
-🏗️ Orchestrator
+```
 
-Responsável por coordenar os agentes.
+---
 
-Ordem atual:
+## Exemplos de Requisição
 
-Classificar objetivo
+### Lead HOT
 
-Classificar temperatura
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Quanto custa para limpar meu nome? Preciso resolver hoje.",
+    "history": [],
+    "is_repeated": false
+  }'
+```
 
-Gerar resposta SDR
+### Lead WARM
 
-Aplicar estratégia final
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Meu nome está sujo há 2 anos e o banco recusou meu crédito.",
+    "history": [],
+    "is_repeated": false
+  }'
+```
 
-Arquivo:
+### Lead com histórico
 
-app/orchestrator/orchestrator.py
-📦 Estrutura de Pastas
-app/
- ├── agents/
- │    ├── goalclassifier.py
- │    ├── sdr_agent.py
- │    ├── lead_score_agent.py
- │
- ├── core/
- │    ├── base_agent.py
- │    ├── llm_provider.py
- │    ├── product_catalog.py
- │
- ├── infrastructure/
- │    ├── openai_provider.py
- │
- ├── orchestrator/
- │    ├── orchestrator.py
- │
- ├── strategy/
- │    ├── strategy_engine.py
- │
- ├── main.py
-⚙️ Tecnologias
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Quanto fica no total?",
+    "history": [
+      { "role": "user", "content": "Quero limpar meu nome" },
+      { "role": "assistant", "content": "Olá! Posso te ajudar com isso." }
+    ],
+    "current_goal": "LIMPAR_NOME",
+    "is_repeated": false
+  }'
+```
 
-Python 3.11
+---
 
-FastAPI
+## Fluxo de Dados
 
-Async Architecture
+```text
+POST /chat
+    │
+    │  ChatRequest (Pydantic)
+    ▼
+Orchestrator.handle()
+    │
+    │  AgentContext { trace_id, lead: LeadData }
+    ▼
+GoalClassifierAgent.run()
+    │  → goal, goal_source
+    ▼
+LeadScoreAgent.run()
+    │  → lead_score, lead_score_source
+    ▼
+SDRAgent.run()
+    │  → sdr_response
+    ▼
+StrategyEngine.apply()
+    │  → strategy
+    ▼
+Resposta consolidada (JSON) com trace_id
+```
 
-OpenAI API
+Garantias:
 
-Docker
+- `AgentContext` é imutável (`frozen=True`).
+- Agentes não lançam exceções não tratadas; erros vão para `context.errors`.
+- Se o LLM estiver indisponível, o Orchestrator retorna uma resposta de fallback segura.
+- Cada decisão (goal, score, estratégia) traz um `source` (`rule`, `llm`, `fallback`).
 
-Docker Compose
+---
 
-🚀 Status Atual do MVP
+## Catálogo de Produtos
 
-✅ Arquitetura multi-agentes implementada
-✅ Classificação de objetivo funcional
-✅ Scoring híbrido funcional
-✅ SDR adaptativo por temperatura
-✅ Strategy Engine com priorização
-✅ Encaminhamento humano estruturado
-⚠️ Persistência de leads ainda não implementada
-⚠️ Follow-up automático ainda não implementado
-⚠️ Banco de dados ainda não estruturado
+O catálogo fica em `app/core/product_catalog.py` e é tipado via Pydantic.
 
-🧠 Próximas Fases
-Sprint 2
+Produtos ativos no MVP:
 
-Modelagem da entidade Lead
+| Key                | Nome                                   | Goals indicados                                  | Status |
+|--------------------|----------------------------------------|--------------------------------------------------|--------|
+| `RAIO_X_FINANCEIRO`| Raio-X Financeiro                      | FINANCIAMENTO, CREDITO_ALTO, OUTRO               | ✅ Ativo |
+| `LIMPA_NOME`       | Limpa Nome e Suspensão das Dívidas     | LIMPAR_NOME, NEGOCIAR_DIVIDAS, ALUGAR_IMOVEL     | ✅ Ativo |
 
-Configuração de banco (PostgreSQL)
+Produtos já modelados para fase 2 (inativos):
 
-Persistência no Orchestrator
+- `RATING_BANCARIO`
+- `LIMPA_BACEN`
+- `CONSORCIO`
+- `HOME_EQUITY`
 
-Migration com Alembic
+Cada produto possui:
 
-Sprint 3
+- `name`
+- `description`
+- `differentials`
+- `price` (estrutura `ProductPrice` com tipo FIXED/INSTALLMENT/ON_DEMAND)
+- `indicated_for` (lista de `GoalType`)
+- `active` (bool)
 
-Conversation + Message
+O `SDRAgent` usa esses dados para contextualizar a resposta.
 
-State machine
+---
 
-Follow-up automático real
+## Guia de Contribuição — Fase 2
 
-Sprint 4
+### 1. Adicionar um novo Goal
 
-Dashboard operacional
+1. Atualize o enum em `app/core/product_catalog.py`:
 
-Fila por prioridade
+```python
+class GoalType(str, Enum):
+    FINANCIAMENTO = "FINANCIAMENTO"
+    CREDITO_ALTO = "CREDITO_ALTO"
+    ALUGAR_IMOVEL = "ALUGAR_IMOVEL"
+    NEGOCIAR_DIVIDAS = "NEGOCIAR_DIVIDAS"
+    LIMPAR_NOME = "LIMPAR_NOME"
+    OUTRO = "OUTRO"
+    NOME_LIMPO_SEM_CREDITO = "NOME_LIMPO_SEM_CREDITO"  # novo
+```
 
-Métricas de conversão
+2. Adicione regras no `GoalClassifierAgent` para esse goal.
 
-🎯 Filosofia do Projeto
+3. Mapeie o goal para um produto no `ProductCatalog`.
 
-O sistema é orientado a:
+---
 
-Inteligência estratégica
+### 2. Adicionar um agente especialista por produto
 
-Modularidade
+1. Crie o arquivo do agente em `app/agents/`:
 
-Separação de responsabilidades
+```python
+class FinanciamentoSpecialistAgent(BaseAgent):
+    def __init__(self, llm_provider):
+        super().__init__(llm_provider, name="FinanciamentoSpecialistAgent", ...)
 
-Evolução incremental
+    async def run(self, context: AgentContext) -> AgentContext:
+        if context.goal != "FINANCIAMENTO":
+            return context
+        # lógica especialista
+        return context.model_copy(update={...})
+```
 
-Baixo acoplamento
+2. Registre o agente em `app/main.py`:
 
-Cada agente possui responsabilidade única.
-O Orchestrator controla o fluxo.
-O StrategyEngine separa inteligência de decisão operacional.
+```python
+agents = [
+    GoalClassifierAgent(llm_provider=llm_provider),
+    LeadScoreAgent(llm_provider=llm_provider),
+    FinanciamentoSpecialistAgent(llm_provider=llm_provider),  # novo
+    SDRAgent(llm_provider=llm_provider),
+]
+```
 
-🔐 Importante
+3. (Opcional) Conecte o produto a esse agente no `ProductCatalog` via um campo futuro `specialist_agent`.
 
-Este MVP:
+---
 
-Não fecha vendas.
+### 3. Boas práticas de commit
 
-Não envia link de pagamento.
+Sugestão de prefixos:
 
-Não substitui humano.
+- `feat(agent): ...`
+- `fix(goal-classifier): ...`
+- `refactor(orchestrator): ...`
+- `docs(readme): ...`
+- `chore(deps): ...`
+- `test(lead-score): ...`
 
-Não executa ações externas.
+---
 
-Ele qualifica, organiza e prioriza.
+## Roadmap
+
+### MVP — Fase 1 ✅
+
+- [x] Pipeline: GoalClassifier → LeadScore → SDR
+- [x] StrategyEngine com HANDOFF e NURTURE
+- [x] AgentContext imutável com `trace_id`
+- [x] LLM provider com retry, timeout e structured output
+- [x] ProductCatalog tipado
+- [x] Health check real
+- [x] Logging estruturado por agente
+
+### Fase 2 — Agentes Especialistas 🔜
+
+- [ ] Novos goals (ex.: `NOME_LIMPO_SEM_CREDITO`, `RESTRICAO_BACEN`, etc.)
+- [ ] Agentes especialistas por produto (Rating, Bacen, Consórcio, Home Equity)
+- [ ] Router de agentes baseado em goal e produto
+- [ ] Persistência de leads e histórico em banco de dados
+- [ ] Dashboard operacional com rastreio por `trace_id`
+
+### Fase 3 — Escala 🔮
+
+- [ ] Engine de follow-up automático
+- [ ] Integração com CRM (HubSpot / RD Station)
+- [ ] Integração com WhatsApp Business API
+- [ ] Observabilidade com OpenTelemetry
+- [ ] Fine-tuning de modelo especializado no domínio Eleva

@@ -8,7 +8,7 @@ services:
       - db
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/multi_agents
-      OPENAI_API_KEY: OPENAI_API_KEY_REMOVEDgIFyqIiZk3hf1xImGtf2TrT2ciBYkVyaGxQOnq8gers7eSDz-qQt9vogPq5cPCDgQn6gdrCqiBT3BlbkFJg3_XDxDn5cFzXWkIeCQn41_Tj0VrifBRmhYSc0h-hX-aBrmLBusd0Wcxeq0WGIyDzhhSmRW_gA
+      OPENAI_API_KEY: OPENAI_API_KEY_REMOVEDmE8R-mVQS5h1emvzNbOnKt38gQ57yaVb7nL598SfeKljQwpysL7eweckNH8da4sdtoc789mv6jT3BlbkFJJVVXGTPnrz5DzwID0DZxdongR1dXiy5KdKlPCXQPomup7HSmz8RFB4Zln52PM6rvknYjHaYhoA
       PYTHONPATH: /app
     restart: always
 
