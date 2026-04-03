@@ -62,6 +62,10 @@ class AgentContext(BaseModel):
         default_factory=list,
         description="Lista de erros não críticos ocorridos durante o pipeline"
     )
+    fast_forward_response: Optional[str] = Field(
+        default=None,
+        description="Pula as gerações de IA seguintes para responder uma trava rápida (Ex: Handoff Imediato ou Ofensas) poupando LLM."
+    )
 
     class Config:
         frozen = True

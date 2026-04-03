@@ -15,7 +15,12 @@ from app.agents.goalclassifier import GoalClassifierAgent
 from app.agents.lead_score_agent import LeadScoreAgent
 from app.agents.sdr_agent import SDRAgent
 from app.infrastructure.openai_provider import OpenAIProvider
+from app.infrastructure.meta_provider import MetaAPIProvider
+from app.services.meta_service import MetaService
 from app.orchestrator.orchestrator import Orchestrator
+from app.routers import webhooks
+from app.infrastructure.database import Base, engine, SessionLocal
+from app.models.database_models import Lead
 
 # ------------------------------------------------------------------
 # Logging
@@ -53,7 +58,10 @@ async def lifespan(app: FastAPI):
     #    Se OPENAI_API_KEY não estiver definida, falha aqui com mensagem clara
     llm_provider = OpenAIProvider()
 
-    # 2. Monta a lista de agentes em ordem de execução
+    # 2. Gera as tabelas no PostgreSQL (AWS) caso não existam
+    Base.metadata.create_all(bind=engine)
+    
+    # 3. Monta a lista de agentes em ordem de execução
     #    Para adicionar um novo agente na fase 2:
     #    basta incluir nessa lista — sem tocar no Orchestrator
     agents = [
@@ -70,6 +78,11 @@ async def lifespan(app: FastAPI):
 
     # 4. Disponibiliza o orchestrator para todos os endpoints via app.state
     app.state.orchestrator = orchestrator
+
+    # 5. Inicializa módulos da Meta
+    meta_provider = MetaAPIProvider()
+    meta_service = MetaService(orchestrator, meta_provider)
+    app.state.meta_service = meta_service
 
     logger.info(
         "Aplicação inicializada com sucesso",
@@ -95,6 +108,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+app.include_router(webhooks.router)
 
 
 # ------------------------------------------------------------------
@@ -308,3 +323,33 @@ async def chat(request: Request, payload: ChatRequest):
     )
 
     return result
+
+@app.get(
+    "/leads",
+    summary="Listar Leads",
+    description="Retorna a lista de leads mapeados no banco de dados AWS. Uso interno operacional.",
+    tags=["Operacional"],
+)
+async def get_leads():
+    # Segurança: Numa implementação mais severa o ideal seria proteger com DEPENDS(JWT)
+    # Por hora extrairemos num escopo fechado p/ o MVP.
+    db = SessionLocal()
+    try:
+        leads = db.query(Lead).all()
+        return {
+            "status": "success",
+            "count": len(leads),
+            "data": [
+                 {
+                     "phone_number": l.phone_number,
+                     "name": l.name,
+                     "goal": l.current_goal,
+                     "score": l.current_score,
+                     "status": getattr(l.status, "value", l.status),
+                     "notes": l.notes,
+                     "last_interaction": l.last_interaction
+                 } for l in leads
+            ]
+        }
+    finally:
+        db.close()

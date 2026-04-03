@@ -42,6 +42,7 @@ class GoalClassifierAgent(BaseAgent):
         "ALUGAR_IMOVEL",
         "NEGOCIAR_DIVIDAS",
         "LIMPAR_NOME",
+        "OFF_TOPIC",
         "OUTRO",
     }
 
@@ -95,23 +96,7 @@ class GoalClassifierAgent(BaseAgent):
     async def run(self, context: AgentContext) -> AgentContext:
         self.log_start(context)
 
-        # ----------------------------------------------------------
-        # PRIORIDADE 1: current_goal existe → NÃO reclassifica
-        # ----------------------------------------------------------
-        if context.lead.current_goal:
-            self.logger.info(
-                "goal_classifier_preserving_current_goal",
-                extra={
-                    "trace_id": context.trace_id,
-                    "current_goal": context.lead.current_goal,
-                },
-            )
-            self.log_success(context)
-            return context.model_copy(update={
-                "goal": context.lead.current_goal,
-                "goal_source": "current_goal",
-            })
-
+        # Removido o Bloqueio Absoluto do current_goal para permitir pivôs e mudanças de assunto reais.
         try:
             # ----------------------------------------------------------
             # PRIORIDADE 2: Regras por keywords
@@ -137,6 +122,19 @@ class GoalClassifierAgent(BaseAgent):
             # PRIORIDADE 3: Fallback LLM
             # ----------------------------------------------------------
             llm_goal = await self._classify_by_llm(context)
+            
+            # ----------------------------------------------------------
+            # VERIFICAÇÃO DE TOXICIDADE / LIXO
+            # ----------------------------------------------------------
+            if llm_goal == "OFF_TOPIC":
+                self.logger.warning("goal_classifier_off_topic_detected", extra={"trace_id": context.trace_id})
+                self.log_success(context)
+                return context.model_copy(update={
+                    "goal": "OUTRO",
+                    "goal_source": "llm",
+                    "lead_score": "COLD",
+                    "fast_forward_response": "Acho que não entendi. O nosso WhatsApp atende apenas dúvidas sobre linhas de crédito e renegociação. Posso te ajudar com isso?"
+                })
 
             self.logger.info(
                 "goal_classifier_llm_fallback",
@@ -192,16 +190,16 @@ empresa especializada em crédito e recuperação financeira.
 - ALUGAR_IMOVEL: quer alugar imóvel mas tem restrição
 - NEGOCIAR_DIVIDAS: quer negociar ou parcelar dívidas existentes
 - LIMPAR_NOME: quer limpar nome, remover restrições no Serasa/SPC
-- OUTRO: qualquer outro objetivo ou dúvida geral
+- OFF_TOPIC: se a mensagem for ofensiva, sem sentido, xingamentos ou totalmente fora do contexto financeiro de negócios (Ex: "qual a receita de bolo?", "troll").
+- OUTRO: qualquer outro objetivo ou dúvida financeira geral.
 
 {history_summary}
 
 ## MENSAGEM ATUAL DO LEAD
 "{context.lead.message}"
 
-Classifique o objetivo principal desta mensagem.
-Escolha apenas um goal da lista acima.
-Considere o histórico — se o lead já demonstrou um goal antes, mantenha-o."""
+Classifique o objetivo principal desta mensagem. Escolha apenas um goal da lista acima.
+Considere o histórico: se o lead já demonstrou um goal antes, mantenha-o, A NÃO SER que o cliente claramente mude de ideia ou assunto na mensagem agora."""
 
         response = await self.llm.generate_structured(
             prompt=prompt,

@@ -200,6 +200,14 @@ class Orchestrator:
                     ]
                 })
 
+            # Verifica o short-circuit (Bypass imposto por algum Agente Seguro)
+            if getattr(context, "fast_forward_response", None):
+                logger.info("orchestrator_fast_forward_triggered", extra={"trace_id": context.trace_id, "agent": agent.name})
+                context = context.model_copy(update={
+                    "sdr_response": context.fast_forward_response
+                })
+                break
+                
         return context
 
     # ------------------------------------------------------------------

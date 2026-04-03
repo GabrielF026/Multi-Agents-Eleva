@@ -64,6 +64,19 @@ class LeadScoreAgent(BaseAgent):
         # 1) Score anterior (do payload ou do próprio contexto)
         previous_score = context.lead.current_lead_score or context.lead_score
 
+        # -------------------------------------------------------------------
+        # SHORT-CIRCUIT: Bypass Atendimento Humano
+        # -------------------------------------------------------------------
+        msg_lower = context.lead.message.lower()
+        if any(term in msg_lower for term in ["falar com atendente", "humano", "pessoa real", "passa para alguem", "atendimento humano", "pessoa", "atendimento normal"]):
+            logger.info("lead_score_bypass_human_handoff", extra={"trace_id": context.trace_id})
+            self.log_success(context)
+            return context.model_copy(update={
+                "lead_score": "HOT",
+                "lead_score_source": "rule_human_handoff",
+                "fast_forward_response": "Perfeito! Estou te transferindo agora mesmo para um especialista humano da Eleva. Aguarde um instante na linha."
+            })
+
         # 2) Regra absoluta: se já era HOT, continua HOT (não chama LLM)
         if previous_score == "HOT":
             logger.info(
