@@ -18,7 +18,7 @@ from app.infrastructure.openai_provider import OpenAIProvider
 from app.infrastructure.meta_provider import MetaAPIProvider
 from app.services.meta_service import MetaService
 from app.orchestrator.orchestrator import Orchestrator
-from app.routers import webhooks
+from app.routers import crm, webhooks
 from app.infrastructure.database import Base, engine, SessionLocal
 from app.models.database_models import Lead
 
@@ -110,6 +110,7 @@ app = FastAPI(
 )
 
 app.include_router(webhooks.router)
+app.include_router(crm.router)
 
 
 # ------------------------------------------------------------------

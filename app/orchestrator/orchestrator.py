@@ -225,7 +225,12 @@ class Orchestrator:
                 goal=context.goal,
                 sdr_result=context.sdr_response,
             )
-            return context.model_copy(update={"strategy": strategy})
+            strategy_with_trace = strategy.model_copy(
+                update={"trace_id": context.trace_id}
+            )
+            return context.model_copy(update={
+                "strategy": strategy_with_trace.model_dump()
+            })
 
         except Exception as e:
             logger.error(
@@ -285,32 +290,3 @@ class Orchestrator:
             "pipeline_errors": ["llm_provider: serviço indisponível"],
             "has_errors": True,
         }
-# app/orchestrator/orchestrator.py
-
-def _apply_strategy(self, context: AgentContext) -> AgentContext:
-    try:
-        strategy = StrategyEngine.apply(
-            lead_score=context.lead_score,
-            goal=context.goal,
-            sdr_result=context.sdr_response,
-        )
-
-        # Injeta trace_id no resultado da estratégia
-        strategy_with_trace = strategy.model_copy(
-            update={"trace_id": context.trace_id}
-        )
-
-        return context.model_copy(update={
-            "strategy": strategy_with_trace.model_dump()
-        })
-
-    except Exception as e:
-        logger.error("strategy_engine_failed", extra={"trace_id": context.trace_id})
-        return context.model_copy(update={
-            "errors": context.errors + [f"strategy_engine: {str(e)}"]
-        })
-
-    
-
-
-    
