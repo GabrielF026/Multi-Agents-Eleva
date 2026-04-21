@@ -1,14 +1,20 @@
 # app/main.py
 from dotenv import load_dotenv
 load_dotenv()
+# app/main.py
+from dotenv import load_dotenv
+load_dotenv()
 import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
+import os
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.agents.goalclassifier import GoalClassifierAgent
@@ -109,11 +115,21 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS para permitir chamadas do navegador livremente
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Monta o diretório da interface visual (criado se não existir)
+os.makedirs("app/presentation", exist_ok=True)
+app.mount("/ui", StaticFiles(directory="app/presentation", html=True), name="ui")
+
 app.include_router(webhooks.router)
 app.include_router(crm.router)
-
-
-# ------------------------------------------------------------------
 # Middleware — Request ID e logging de requisições
 # ------------------------------------------------------------------
 
