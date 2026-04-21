@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eleva Multi-Agents | Demonstração</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Icon Font -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Background Animado -->
+    <div class="bg-mesh">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <!-- Container Principal do Chat -->
+    <div class="chat-container glass-panel">
+        <header class="chat-header">
+            <div class="header-info">
+                <div class="avatar">
+                    <i class="bi bi-robot"></i>
+                </div>
+                <div>
+                    <h1>Agente Eleva</h1>
+                    <p class="status">● Online e analisando contextualmente</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button id="btn-reset" class="icon-btn" title="Reiniciar Conversa">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
+            </div>
+        </header>
+
+        <main class="chat-messages" id="chat-messages">
+            <!-- Mensagem de Boas Vindas -->
+            <div class="message ai-message fade-in">
+                <div class="bubble">
+                    Olá! Sou o agente virtual da Eleva. Para qual produto de crédito ou renegociação você busca simulação hoje?
+                </div>
+                <span class="timestamp">Agora</span>
+            </div>
+        </main>
+
+        <footer class="chat-input-area">
+            <div class="input-glass-container">
+                <input type="text" id="chat-input" placeholder="Digite sua mensagem ao lead (ex: Tenho uma dívida no banco e quero limpar meu nome)..." autocomplete="off" autofocus>
+                <button id="btn-send" class="send-btn">
+                    <i class="bi bi-send-fill"></i>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Indicador interno de Painel CRM simulado / Estado de depuração -->
+    <aside class="debug-panel glass-panel">
+        <h3>Pipeline de IA em Tempo Real</h3>
+        
+        <div class="debug-item">
+            <span class="label">Objetivo Identificado</span>
+            <span class="value badge badge-neutral" id="dbg-goal">AGUARDANDO...</span>
+        </div>
+        
+        <div class="debug-item">
+            <span class="label">Temperatura (Score)</span>
+            <span class="value badge badge-neutral" id="dbg-score">N/A</span>
+        </div>
+        
+        <div class="debug-item">
+            <span class="label">Tom da Resposta (SDR)</span>
+            <span class="value badge badge-blue" id="dbg-sdr">Consultivo</span>
+        </div>
+        
+        <div class="debug-divider"></div>
+        
+        <p class="debug-hint"><i class="bi bi-info-circle"></i> Estes dados são extraídos on-the-fly pela arquitetura de 3 agentes antes de gerar a resposta.</p>
+    </aside>
+
+    <script src="script.js"></script>
+</body>
+</html>
